@@ -144,7 +144,7 @@ def get_gpd(x,params,function='cdf'):
     
     x : np.ndarray
     
-    params : np.ndarray, identical to the output from 'fit_glo_pwm'
+    params : np.ndarray, identical to the output from 'fit_gpd_pwm'
     
     function : 'cdf' or 'pdf'
     """
@@ -153,10 +153,12 @@ def get_gpd(x,params,function='cdf'):
     
     if function=='cdf':
         cdf = 1 - ( 1 - k*(x-X)/a )**(1/k)
+        cdf = np.where(x>X , cdf , 0) # if x < location parameter, density is zero
         return cdf
     
     if function=='pdf':
-        pdf = ( 1 - k*(x-X)/a )**(1/k-1)
+        pdf = (1/a) * ( 1 - k*(x-X)/a )**(1/k-1)
+        pdf = np.where(x>X , pdf , 0) # if x < location parameter, density is zero
         return pdf
 
 def fit_norm_pwm(a):
