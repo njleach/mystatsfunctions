@@ -9,6 +9,8 @@ For the mathematics behind this module, see:
 Hosking, J. R. M. (1990). L-Moments: Analysis and Estimation of Distributions Using Linear Combinations of Order Statistics. Journal of the Royal Statistical Society. Series B (Methodological), 52(1), 105–124. http://www.jstor.org/stable/2345653
 
 Far faster & more convenient than scipy.fit if fitting distributions many times or over multiple dimensions.
+
+Limitations: since the first dimension is used as the sample dimension, you cannot fit differently-sized samples simultaneously. However, for bootstrapping and geospatial applications this isn't a common issue.
 """
 
 import numpy as np
@@ -17,12 +19,6 @@ import scipy as sp
 # Method of L-moments for fitting a number of set statistical distributions
 
 # TODO: add gamma distribution class
-# TODO add rvs method
-# TODO: add likelihood method
-# TODO create parent class for distributions
-# TODO add AIC, BIC, AICc, Anderson-Darling, KS methods
-# TODO add self.data for data fit
-# TODO improve way in which specified params are checked
 
 ## auxiliary functions ##
 def b_r(r,a):
@@ -62,14 +58,206 @@ def get_lmoments(a,r=3):
     return b
 
 
-## distribution fit functions ##
-class gev:
+## distribution classes ##
+
+# generic distribution class
+class _dist:
+    ## attributes
+            
+    ## placeholder classes that are specific to each distribution type. ##
+    def _check_params(self):
+        """Placeholder method."""
+        pass
+        
+    def pdf(self, x):
+        """Placeholder method."""
+        pass
+    
+    def cdf(self, x):
+        """Placeholder method."""
+        pass
+    
+    def qf(self, F):
+        """Placeholder method."""
+        pass
+    
+    def fit(self, x):
+        """Placeholder method."""
+        pass
+    
+    ## generic methods applicable across distribution types. ##
+    def rvs(self, n):
+        
+        """
+        Generates n random variables based on the model parameters.
+
+        n : int
+        """
+        
+        self._check_params()
+        
+        u = np.random.random((n,*np.ones(np.ndim(self.X),dtype=int)))
+        
+        return self.qf(u)
+        
+    
+    def likelihood(self):
+        
+        """
+        Computes the model likelihood based on the fit data and parameters.
+
+        x : np.ndarray
+        """
+        
+        if self.data is None:
+            raise Exception('Model not fit to data. Use self.fit(data) to fit parameters to data.')
+            
+        return np.sum(self.pdf(self.data),axis=0)
+    
+    def AIC(self):
+        
+        """
+        Returns Akaike information criterion of fit parameters given model data. Smaller = better.
+        """
+        
+        likelihood = self.likelihood()
+        
+        return 2 * ( self._no_of_params - np.log(likelihood) )
+    
+    def AICc(self):
+        
+        """
+        Returns corrected Akaike information criterion of fit parameters given model data. Smaller = better.
+        """
+        
+        AIC = self.AIC()
+        
+        penalty = (2*self._no_of_params**2 + 2*self._no_of_params) / (self.data.shape[0]-self._no_of_params-1)
+        
+        return AIC + penalty
+    
+    def BIC(self):
+        
+        """
+        Returns Bayesian information criterion of fit parameters given model data. Smaller = better.
+        """
+        
+        likelihood = self.likelihood()
+        
+        return self._no_of_params * self.data.shape[0] - 2 * np.log(likelihood)
+    
+    def ADts(self):
+        
+        """
+        Returns Anderson-Darling test statistic. Smaller = better.
+        """
+        
+        F_data = self.cdf(np.sort(self.data,axis=0))
+        
+        n = self.data.shape[0]
+        
+        # string used by the einsum operation
+        dimstr = 'jklmnopqrstuvwxyz' # maxes out at 17 dimensions...
+        
+        S = np.einsum('i,i'+dimstr[:self.data.ndim-1]+'->'+dimstr[:self.data.ndim-1], (2*np.arange(1,n+1)-1)/n, np.log(F_data)+np.log(1-F_data[::-1]))
+        
+        return -n-S
+    
+    def CvMts(self):
+        
+        """
+        Returns Cramer-von Mises test statistic. Smaller = better.
+        """
+        
+        F_data = self.cdf(np.sort(self.data,axis=0))
+        
+        n = self.data.shape[0]
+        
+        T = 1/(12*n) + np.sum( ((2*np.arange(1,n+1).reshape(-1,*np.ones(self.data.ndim-1,dtype=int))-1)/(2*n) - F_data)**2, axis=0 )
+        
+        return T
+    
+    def KSts(self):
+        
+        """
+        Returns Kolmogorov–Smirnov test statistic. Smaller = better.
+        """
+        
+        F_data = self.cdf(np.sort(self.data,axis=0))
+        
+        n = self.data.shape[0]
+        
+        F_emp = np.arange(1,n+1).reshape(-1,*np.ones(self.data.ndim-1,dtype=int)) / n
+        
+        D = np.max(np.abs(F_emp - F_data),axis=0)
+        
+        return D
+    
+# specific Generalised Extreme Value class
+class gev(_dist):
     ## attributes
     
     def __init__(self, k=None, X=None, a=None):
         self.k = k
         self.X = X
         self.a = a
+        
+        self.data = None
+        
+        self._no_of_params=3
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.k,self.X,self.a]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a GEV based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        pdf = (1/self.a) * ( 1-self.k*( (x-self.X)/self.a ) )**( (1/self.k)-1 ) * np.exp( -1*(1-self.k*( (x-self.X)/self.a) )**(1/self.k) )
+        # set values outside the GEV limits to be 0 rather than undefined
+        return np.where(np.isnan(pdf),0,pdf)
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a GEV based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        cdf = np.exp(-1*(1-self.k*((x-self.X)/self.a))**(1/self.k))
+        # set values outside the GEV limits to be 1 (0 for negative shape parameter) rather than undefined
+        return np.where(np.isnan(cdf), np.where(self.k<0, 0, 1), cdf)
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a GEV based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*(1-(-np.log(F))**self.k)/self.k
+        
+        return qf
         
     def fit(self, x):
         
@@ -94,54 +282,11 @@ class gev:
         self.k=k
         self.X=X
         self.a=a
-
-    def pdf(self, x):
         
-        """
-        Returns the pdf of a GEV based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GEV parameters not fully set.')
-        
-        pdf = (1/self.a) * ( 1-self.k*( (x-self.X)/self.a ) )**( (1/self.k)-1 ) * np.exp( -1*(1-self.k*( (x-self.X)/self.a) )**(1/self.k) )
-        # set values outside the GEV limits to be 0 rather than undefined
-        return np.where(np.isnan(pdf),0,pdf)
-
-    def cdf(self, x):
-        
-        """
-        Returns the cdf of a GEV based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GEV parameters not fully set.')
-        
-        cdf = np.exp(-1*(1-self.k*((x-self.X)/self.a))**(1/self.k))
-        # set values outside the GEV limits to be 1 (0 for negative shape parameter) rather than undefined
-        return np.where(np.isnan(cdf), np.where(self.k<0, 0, 1), cdf)
+        self.data = x[:]
     
-    def qf(self, F):
-        
-        """
-        Returns the quantile function of a GEV based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GEV parameters not fully set.')
-            
-        if np.any(np.abs(F)>1):
-            raise ValueError('Input probabilities must be 0<F<=1.')
-            
-        qf = self.X+self.a*(1-(-np.log(F))**self.k)/self.k
-        
-        return qf
-    
-    
-class glo:
+# specific Generalised Logistic class    
+class glo(_dist):
     ## attributes
     
     def __init__(self, k=None, X=None, a=None):
@@ -149,10 +294,73 @@ class glo:
         self.X = X
         self.a = a
         
+        self.data = None
+        
+        self._no_of_params = 3
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.k,self.X,self.a]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a GL based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        pdf = (1-self.k*(x-self.X)/self.a)**(1/self.k-1) / ( self.a * ( 1 + (1-self.k*(x-self.X)/self.a)**(1/self.k) )**2 )
+        
+        ## set values outside the glo limits equal to zero
+        pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
+        
+        return pdf
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a GL based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        cdf = 1/( 1 + (1-self.k*(x-self.X)/self.a)**(1/self.k) )
+        
+        ## set values outside the glo limits equal to zero
+        cdf = np.where( self.k*(x-self.X)/self.a<1, cdf, np.where(self.k<0, 0, 1) )
+        
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a GL based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*(1-((1-F)/F)**self.k)/self.k
+        
+        return qf
+    
     def fit(self, x):
         
         """
-        Fits the (3) parameters of a GEV distribution over the first dimension of x
+        Fits the (3) parameters of a GLo distribution over the first dimension of x
 
         x : np.ndarray
         """
@@ -170,66 +378,86 @@ class glo:
         self.k=k
         self.X=X
         self.a=a
+        
+        self.data = x[:]
 
-    def pdf(self, x):
-        
-        """
-        Returns the pdf of a GL based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GLo parameters not fully set.')
-        
-        pdf = (1-self.k*(x-self.X)/self.a)**(1/self.k-1) / ( self.a * ( 1 + (1-self.k*(x-self.X)/self.a)**(1/self.k) )**2 )
-        
-        ## set values outside the glo limits equal to zero
-        pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
-        
-        return pdf
-
-    def cdf(self, x):
-        
-        """
-        Returns the cdf of a GL based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GLo parameters not fully set.')
-        
-        cdf = 1/( 1 + (1-self.k*(x-self.X)/self.a)**(1/self.k) )
-        
-        ## set values outside the glo limits equal to zero
-        cdf = np.where( self.k*(x-self.X)/self.a<1, cdf, np.where(self.k<0, 0, 1) )
-        
-        return cdf
-    
-    def qf(self, F):
-        
-        """
-        Returns the quantile function of a GL based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GLo parameters not fully set.')
-            
-        if np.any(np.abs(F)>1):
-            raise ValueError('Input probabilities must be 0<F<=1.')
-            
-        qf = self.X+self.a*(1-((1-F)/F)**self.k)/self.k
-        
-        return qf
-
-
-class gpd:
+# specific Generalised Pareto Distribution class
+class gpd(_dist):
     ## attributes
     
     def __init__(self, k=None, X=None, a=None):
         self.k = k
         self.X = X
         self.a = a
+        
+        self.data = None
+        
+        self._no_of_params = 3
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.k,self.X,self.a]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a GPD based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        pdf = (1/self.a) * ( 1 - self.k*(x-self.X)/self.a )**(1/self.k-1)
+        
+        ## set values outside the gpd limits equal to zero
+        pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
+        
+        ## set values smaller than the location parameter equal to zero
+        pdf = np.where(x>self.X , pdf , 0)
+        
+        return pdf
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a GPD based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        cdf = 1 - ( 1 - self.k*(x-self.X)/self.a )**(1/self.k)
+        
+        ## set values outside the gpd limits equal to one
+        cdf = np.where(self.k*(x-self.X)/self.a<1 , cdf , 1)
+        
+        ## set values smaller than the location parameter equal to zero
+        cdf = np.where(x>self.X , cdf , 0)
+        
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a GPD based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*(1-(1-F)**self.k)/self.k
+        
+        return qf
         
     def fit(self, x):
         
@@ -252,71 +480,73 @@ class gpd:
         self.k=k
         self.X=X
         self.a=a
+        
+        self.data = x[:]
 
-    def pdf(self, x):
-        
-        """
-        Returns the pdf of a GPD based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GPD parameters not fully set.')
-        
-        pdf = (1/self.a) * ( 1 - self.k*(x-self.X)/self.a )**(1/self.k-1)
-        
-        ## set values outside the gpd limits equal to zero
-        pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
-        
-        ## set values smaller than the location parameter equal to zero
-        pdf = np.where(x>self.X , pdf , 0)
-        
-        return pdf
-
-    def cdf(self, x):
-        
-        """
-        Returns the cdf of a GPD based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GPD parameters not fully set.')
-        
-        cdf = 1 - ( 1 - self.k*(x-self.X)/self.a )**(1/self.k)
-        
-        ## set values outside the gpd limits equal to one
-        cdf = np.where(self.k*(x-self.X)/self.a<1 , cdf , 1)
-        
-        ## set values smaller than the location parameter equal to zero
-        cdf = np.where(x>self.X , cdf , 0)
-        
-        return cdf
-    
-    def qf(self, F):
-        
-        """
-        Returns the quantile function of a GPD based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('GPD parameters not fully set.')
-            
-        if np.any(np.abs(F)>1):
-            raise ValueError('Input probabilities must be 0<F<=1.')
-            
-        qf = self.X+self.a*(1-(1-F)**self.k)/self.k
-        
-        return qf
-
-    
-class norm:
+# specific Normal distribution class
+class norm(_dist):
     ## attributes
     
     def __init__(self, X=None, a=None):
         self.X = X
         self.a = a
+        
+        self.data = None
+        
+        self._no_of_params = 2
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.X,self.a]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a normal based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        y = (x-self.X)/self.a
+        pdf = ( 1/( self.a * np.sqrt(2*np.pi) ) ) * np.exp( -y**2 / 2 )
+        return pdf
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a normal based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        y = (x-self.X)/self.a
+        cdf = (1/2) * (1 + sp.special.erf(y/np.sqrt(2)))
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a norm based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*np.sqrt(2)*sp.special.erfinv(2*F-1)
+        
+        return qf
         
     def fit(self, x):
         
@@ -336,48 +566,5 @@ class norm:
 
         self.X=X
         self.a=a
-
-    def pdf(self, x):
         
-        """
-        Returns the pdf of a normal based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('norm parameters not fully set.')
-            
-        y = (x-self.X)/self.a
-        pdf = ( 1/( self.a * np.sqrt(2*np.pi) ) ) * np.exp( -y**2 / 2 )
-        return pdf
-
-    def cdf(self, x):
-        
-        """
-        Returns the cdf of a normal based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('norm parameters not fully set.')
-        
-        y = (x-self.X)/self.a
-        cdf = (1/2) * (1 + sp.special.erf(y/np.sqrt(2)))
-        return cdf
-    
-    def qf(self, F):
-        
-        """
-        Returns the quantile function of a norm based on the set parameters. 
-        Raises exception if parameters not set or fit to data.
-        """
-        
-        if any(value is None for value in self.__dict__.values()):
-            raise TypeError('norm parameters not fully set.')
-            
-        if np.any(np.abs(F)>1):
-            raise ValueError('Input probabilities must be 0<F<=1.')
-            
-        qf = self.X+self.a*np.sqrt(2)*sp.special.erfinv(2*F-1)
-        
-        return qf
+        self.data = x[:]
