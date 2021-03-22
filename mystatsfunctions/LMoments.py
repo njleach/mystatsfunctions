@@ -1,38 +1,68 @@
 # Some statistical functions I wrote
 # Nick Leach 2021
 
+"""
+Methods for fitting statistical distributions efficiently using L-moments.
+
+For the mathematics behind this module, see:
+
+Hosking, J. R. M. (1990). L-Moments: Analysis and Estimation of Distributions Using Linear Combinations of Order Statistics. Journal of the Royal Statistical Society. Series B (Methodological), 52(1), 105–124. http://www.jstor.org/stable/2345653
+
+Far faster & more convenient than scipy.fit if fitting distributions many times or over multiple dimensions.
+"""
+
 import numpy as np
 import scipy as sp
 
 # Method of L-moments for fitting a number of set statistical distributions
 
-# TODO: make sure the override functions are compatible with the shape parameter fits (ie. setting GEV CDF to 1 above max threshold)
 # TODO: add gamma distribution class
-# TODO: add quantile function method
+# TODO add rvs method
+# TODO: add likelihood method
+# TODO create parent class for distributions
+# TODO add AIC, BIC, AICc, Anderson-Darling, KS methods
+# TODO add self.data for data fit
+# TODO improve way in which specified params are checked
 
 ## auxiliary functions ##
 def b_r(r,a):
     
     """
-    Helper function for lmom_to_3
+    Helper function for get_lmoments.
     """
     
     n = a.shape[0]
 
     return np.sum([np.prod(i+1-np.arange(1,r+1))/np.prod(n-np.arange(1,r+1))*a[i] for i in np.arange(n)],axis=0)/n
 
-def lmom_to_3(a):
+def get_lmoments(a,r=3):
     
     """
-    returns first three l moments, a is the sorted array
+    returns first r l moments, a is the *sorted* array.
+    
+    r must be less than the size of a's first dimension
     """
     
-    b = [b_r(i,a) for i in np.arange(3)]
+    _r = np.arange(r)[None]
     
-    return b[0] , -b[0] + 2 * b[1] , b[0] + 6 * ( b[2] - b[1] ) #, -b[0] + 12 * b[1] - 30 * b[2] + 20 * b[3] , b[0] + 10 * (-2*b[1]+9*b[2]-14*b[3]+7*b[4])
+    _k = np.arange(r)[:,None]
+    
+    # generates the r x r coefficients array
+    br_coefs = (-1)**(_r+_k)*sp.special.comb(_r,_k) * sp.special.comb(_r+_k,_k)
+    
+    # generates the first r b values
+    b_to_r = np.array([b_r(i,a) for i in np.arange(r)])
+    
+    # string used by the einsum operation
+    dimstr = 'jklmnopqrstuvwxyz' # maxes out at 17 dimensions...
+    
+    # einstein summation over 2nd dimension
+    b = np.einsum('ij,i'+dimstr[1:b_to_r.ndim]+'->'+dimstr[:b_to_r.ndim],br_coefs,b_to_r)
+    
+    return b
+
 
 ## distribution fit functions ##
-
 class gev:
     ## attributes
     
@@ -51,7 +81,7 @@ class gev:
 
         x_sort = np.sort(x,axis=0)
 
-        l = lmom_to_3(x_sort)
+        l = get_lmoments(x_sort)
 
         c = 2/(3+l[2]/l[1]) - np.log(2)/np.log(3)
 
@@ -129,7 +159,7 @@ class glo:
 
         x_sort = np.sort(x,axis=0)
 
-        l = lmom_to_3(x_sort)
+        l = get_lmoments(x_sort)
 
         k = -l[2]/l[1]
     
@@ -211,7 +241,7 @@ class gpd:
 
         x_sort = np.sort(x,axis=0)
 
-        l = lmom_to_3(x_sort)
+        l = get_lmoments(x_sort)
 
         k = ( 1-3*l[2]/l[1] ) / ( 1+l[2]/l[1] )
     
@@ -298,7 +328,7 @@ class norm:
 
         x_sort = np.sort(x,axis=0)
 
-        l = lmom_to_3(x_sort)
+        l = get_lmoments(x_sort,r=2)
 
         a = np.pi**(1/2) * l[1]
     
