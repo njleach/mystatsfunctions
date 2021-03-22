@@ -76,7 +76,7 @@ class gev:
             raise TypeError('GEV parameters not fully set.')
         
         pdf = (1/self.a) * ( 1-self.k*( (x-self.X)/self.a ) )**( (1/self.k)-1 ) * np.exp( -1*(1-self.k*( (x-self.X)/self.a) )**(1/self.k) )
-        # set values above the GEV limit to be 1 rather than undefined
+        # set values outside the GEV limits to be 0 rather than undefined
         return np.where(np.isnan(pdf),0,pdf)
 
     def cdf(self, x):
@@ -90,8 +90,25 @@ class gev:
             raise TypeError('GEV parameters not fully set.')
         
         cdf = np.exp(-1*(1-self.k*((x-self.X)/self.a))**(1/self.k))
-        # set values above the GEV limit to be 1 rather than undefined
-        return np.where(np.isnan(cdf),1,cdf)
+        # set values outside the GEV limits to be 1 (0 for negative shape parameter) rather than undefined
+        return np.where(np.isnan(cdf), np.where(self.k<0, 0, 1), cdf)
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a GEV based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        if any(value is None for value in self.__dict__.values()):
+            raise TypeError('GEV parameters not fully set.')
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*(1-(-np.log(F))**self.k)/self.k
+        
+        return qf
     
     
 class glo:
@@ -135,6 +152,10 @@ class glo:
             raise TypeError('GLo parameters not fully set.')
         
         pdf = (1-self.k*(x-self.X)/self.a)**(1/self.k-1) / ( self.a * ( 1 + (1-self.k*(x-self.X)/self.a)**(1/self.k) )**2 )
+        
+        ## set values outside the glo limits equal to zero
+        pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
+        
         return pdf
 
     def cdf(self, x):
@@ -148,7 +169,28 @@ class glo:
             raise TypeError('GLo parameters not fully set.')
         
         cdf = 1/( 1 + (1-self.k*(x-self.X)/self.a)**(1/self.k) )
+        
+        ## set values outside the glo limits equal to zero
+        cdf = np.where( self.k*(x-self.X)/self.a<1, cdf, np.where(self.k<0, 0, 1) )
+        
         return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a GL based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        if any(value is None for value in self.__dict__.values()):
+            raise TypeError('GLo parameters not fully set.')
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*(1-((1-F)/F)**self.k)/self.k
+        
+        return qf
 
 
 class gpd:
@@ -192,7 +234,14 @@ class gpd:
             raise TypeError('GPD parameters not fully set.')
         
         pdf = (1/self.a) * ( 1 - self.k*(x-self.X)/self.a )**(1/self.k-1)
-        return np.where(x>X , pdf , 0)
+        
+        ## set values outside the gpd limits equal to zero
+        pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
+        
+        ## set values smaller than the location parameter equal to zero
+        pdf = np.where(x>self.X , pdf , 0)
+        
+        return pdf
 
     def cdf(self, x):
         
@@ -205,7 +254,31 @@ class gpd:
             raise TypeError('GPD parameters not fully set.')
         
         cdf = 1 - ( 1 - self.k*(x-self.X)/self.a )**(1/self.k)
-        return np.where(x>X , cdf , 0)
+        
+        ## set values outside the gpd limits equal to one
+        cdf = np.where(self.k*(x-self.X)/self.a<1 , cdf , 1)
+        
+        ## set values smaller than the location parameter equal to zero
+        cdf = np.where(x>self.X , cdf , 0)
+        
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a GPD based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        if any(value is None for value in self.__dict__.values()):
+            raise TypeError('GPD parameters not fully set.')
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*(1-(1-F)**self.k)/self.k
+        
+        return qf
 
     
 class norm:
@@ -244,7 +317,7 @@ class norm:
         if any(value is None for value in self.__dict__.values()):
             raise TypeError('norm parameters not fully set.')
             
-        y = (x-X)/a
+        y = (x-self.X)/self.a
         pdf = ( 1/( self.a * np.sqrt(2*np.pi) ) ) * np.exp( -y**2 / 2 )
         return pdf
 
@@ -258,6 +331,23 @@ class norm:
         if any(value is None for value in self.__dict__.values()):
             raise TypeError('norm parameters not fully set.')
         
-        y = (x-X)/a
+        y = (x-self.X)/self.a
         cdf = (1/2) * (1 + sp.special.erf(y/np.sqrt(2)))
         return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a norm based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        if any(value is None for value in self.__dict__.values()):
+            raise TypeError('norm parameters not fully set.')
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X+self.a*np.sqrt(2)*sp.special.erfinv(2*F-1)
+        
+        return qf
