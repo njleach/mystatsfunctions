@@ -4,9 +4,13 @@
 """
 Methods for fitting statistical distributions efficiently using L-moments.
 
-For the mathematics behind this module, see:
+For the mathematics & definitions of distributions used in this module, see:
 
-Hosking, J. R. M. (1990). L-Moments: Analysis and Estimation of Distributions Using Linear Combinations of Order Statistics. Journal of the Royal Statistical Society. Series B (Methodological), 52(1), 105–124. http://www.jstor.org/stable/2345653
+Hosking, J. R. M. (1990). L-Moments: Analysis and Estimation of Distributions Using Linear Combinations of Order Statistics. Journal of the Royal Statistical Society: Series B (Methodological), 52(1), 105–124. https://doi.org/10.1111/j.2517-6161.1990.tb01775.x
+
+Hosking, J. R. M., & Wallis, J. R. (1997). Regional Frequency Analysis. In Regional Frequency Analysis. Cambridge University Press. https://doi.org/10.1017/cbo9780511529443
+
+Hosking, J. R. M. (2005). Research Report: Fortran Routines for use with the Method of L-Moments. http://ftp.uni-bayreuth.de/math/statlib/general/lmoments.pdf
 
 Far faster & more convenient than scipy.fit if fitting distributions many times or over multiple dimensions.
 
@@ -371,9 +375,9 @@ class glo(_dist):
 
         k = -l[2]/l[1]
     
-        a = l[1] / (sp.special.gamma(1+k)*sp.special.gamma(1-k))
+        a = l[1] * np.sin(k*np.pi) / (k*np.pi)
 
-        X = l[0]+(l[1]-a)/k
+        X = l[0] - a * (1 /k - np.pi/np.sin(k*np.pi) )
 
         self.k=k
         self.X=X
@@ -482,6 +486,209 @@ class gpd(_dist):
         self.a=a
         
         self.data = x[:]
+        
+# specific Weibull distribution class
+class weib(_dist):
+    
+    """
+    Follows distribution definition in Goda, Y., Kudaka, M., & Kawai, H. (2011). INCORPORATION OF WEIBULL DISTRIBUTION IN L-MOMENTS METHOD FOR. Coastal Engineering Proceedings, 1(32), 62. https://doi.org/10.9753/icce.v32.waves.62
+    """
+    
+    ## attributes
+    
+    def __init__(self, k=None, X=None, a=None):
+        self.k = k
+        self.X = X
+        self.a = a
+        
+        self.data = None
+        
+        self._no_of_params = 3
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.k,self.X,self.a]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a Weibull based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        pdf = self.k/self.a*( (x-self.X)/self.a )**(self.k-1) * np.exp( -((x-self.X)/self.a)**self.k )
+        
+        ## set values smaller than the location parameter equal to zero
+        pdf = np.where(x>self.X , pdf , 0)
+        
+        return pdf
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a Weibull based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        cdf = 1 - np.exp( -((x-self.X)/self.a)**self.k )
+        
+        ## set values smaller than the location parameter equal to zero
+        cdf = np.where(x>self.X , cdf , 0)
+        
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a Weibull based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X + self.a*( -np.log(1-F) )**(1/self.k)
+        
+        return qf
+        
+    def fit(self, x):
+        
+        """
+        Fits the (3) parameters of a Weibull distribution over the first dimension of x
+
+        x : np.ndarray
+        """
+
+        x_sort = np.sort(x,axis=0)
+
+        l = get_lmoments(x_sort)
+        
+        t3 = l[2]/l[1]
+
+        # I use a 10-order polynomial, fit over the t3 / k relation between 0<k<5
+        k = 7.64145855e+02*t3**10 + -4.78351190e+03*t3**9 + 1.23664931e+04*t3**8 + -1.74853312e+04*t3**7 + 1.50061498e+04*t3**6 + -8.20115240e+03*t3**5 + 2.93892208e+03*t3**4 + -7.20630145e+02*t3**3 + 1.33908727e+02*t3**2 + -2.24593687e+01*t3 + 3.52289017e+00
+    
+        a = l[1] / ( (1-2**(-1/k))*sp.special.gamma(1+1/k) )
+
+        X = l[0] - a*sp.special.gamma(1+1/k)
+
+        self.k=k
+        self.X=X
+        self.a=a
+        
+        self.data = x[:]
+        
+# specific Gamma distribution class
+class gam(_dist):
+    ## attributes
+    
+    def __init__(self, a=None, B=None):
+        self.a = a
+        self.B = B
+        
+        self.data = None
+        
+        self._no_of_params = 2
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.a,self.B]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a gamma based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        pdf = x**(self.a-1) * np.exp(-x/self.B) / (self.B**self.a * sp.special.gamma(self.a))
+        
+        ## set x<0 equal to zero
+        pdf = np.where(x>0 , pdf , 0)
+        
+        return pdf
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a gamma based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        cdf = sp.special.gammainc(self.a, x/self.B)
+        
+        ## set x<0 equal to zero
+        cdf = np.where(x>0 , cdf , 0)
+        
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a gamma based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = sp.special.gammaincinv(self.a, F) * self.B
+        
+        return qf
+        
+    def fit(self, x):
+        
+        """
+        Fits the (2) parameters of a gamma distribution over the first dimension of x.
+        
+        Rational approximation from Hosking, 1990.
+
+        x : np.ndarray
+        """
+
+        x_sort = np.sort(x,axis=0)
+
+        l = get_lmoments(x_sort,r=2)
+
+        t = l[1]/l[0]
+        
+        z1 = np.pi*t**2
+        z2 = 1-t
+        
+        a = np.where( t<1/2, (1-0.3080*z1)/(z1-0.05812*z1**2+0.01765*z1**3), (0.7213*z2-0.5947*z2**2)/(1-2.1817*z2+1.2113*z2**2))[()]
+        
+        B = l[0]/a
+
+        self.a=a
+        self.B=B
+        
+        self.data = x[:]
 
 # specific Normal distribution class
 class norm(_dist):
@@ -517,6 +724,7 @@ class norm(_dist):
             
         y = (x-self.X)/self.a
         pdf = ( 1/( self.a * np.sqrt(2*np.pi) ) ) * np.exp( -y**2 / 2 )
+        
         return pdf
 
     def cdf(self, x):
@@ -530,6 +738,7 @@ class norm(_dist):
         
         y = (x-self.X)/self.a
         cdf = (1/2) * (1 + sp.special.erf(y/np.sqrt(2)))
+        
         return cdf
     
     def qf(self, F):
