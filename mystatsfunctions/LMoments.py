@@ -22,8 +22,6 @@ import scipy as sp
 
 # Method of L-moments for fitting a number of set statistical distributions
 
-# TODO: add gamma distribution class
-
 ## auxiliary functions ##
 def b_r(r,a):
     
