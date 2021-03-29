@@ -11,6 +11,7 @@ from scipy.stats import t
 # Simple & multiple least squares estimation in numpy
 
 # TODO add in partial correlations
+# TODO add in weight matrix for OLSE
 
 ## auxiliary functions
 
@@ -47,7 +48,7 @@ class simple():
     
     The regression is broadcast over all the other dimensions (so you can eg. compute point-by-point simple regressions of two variables).
     
-    Compatible with masked arrays.
+    Compatible with masked arrays, by using the clas `mask` kwarg.
     
     Y: np.ndarray
     Array of dependent variable values.
@@ -56,16 +57,22 @@ class simple():
     W: np.ndarray
     Weights array.
     Must be broadcastable with Y (easiest way is to ensure they have the same number of dimensions).
+    
+    LIMITATIONS: If using a mask, all the input arrays MUST be the same shape (ie. no broadcasting). Without any masking, arrays will broadcast normally.
     """
     
     ## attributes
     
-    def __init__(self, Y, W=None):
+    def __init__(self, Y, W=None, mask=None):
         
-        self.Y = Y
-        self.n = Y.shape[0]
+        self.Y = np.ma.array(Y, mask=mask)
         
-        self.W = W
+        if W is None:
+            self.W = np.ma.array(np.ones(Y.shape), mask=mask)
+        else:
+            self.W = np.ma.array(W, mask=mask)
+            
+        self._mask=mask
         
         self._fit = False
         
@@ -95,18 +102,13 @@ class simple():
         Standard errors in intercept (slope) parameters.
         """
         
-        self.X = X
+        # create objects for computation
+        self.X = np.ma.array(X, mask=self._mask)
         
-        if self.W is None:
-            w = np.ones(X.shape)
-            self.W = w
-        else:
-            w = self.W
+        w = self.W
         
         x = self.X
         y = self.Y
-        
-        n = self.n
         
         # compute weighted means
         _x = np.ma.sum(w * x, axis=0) / np.ma.sum(w, axis=0)
@@ -125,7 +127,7 @@ class simple():
         e = y - b0 - b1 * x
         
         # standard error
-        s2 = np.ma.sum(w * e**2, axis=0) / (n-2)
+        s2 = np.ma.sum(w * e**2, axis=0) / (np.ma.count(w, axis=0)-2)
     
         # parameter variances
         s2_b1 = s2 / Sxx
@@ -218,7 +220,7 @@ class simple():
             
         var_model = self.s2 * ( 1/np.ma.sum(self.W, axis=0) + (X0 - self._x)**2/self._Sxx )
         
-        t_val = t(self.n-2).ppf(0.5+interval/2)
+        t_val = t(np.ma.count(self.W, axis=0)-2).ppf(0.5+interval/2)
         
         model = self.pred(X0)
         
@@ -245,9 +247,9 @@ class simple():
         if not self.fit:
             raise TypeError('Linear model not yet specified with self.fit()')
             
-        var_model = self.s2 * ( 1 + 1/np.ma.sum(self.W, axis=0) + (X0 - self._x)**2/self._Sxx )
+        var_model = self.s2 * (1/self.W + 1/np.ma.sum(self.W, axis=0) + (X0 - self._x)**2/self._Sxx )
         
-        t_val = t(self.n-2).ppf(0.5+interval/2)
+        t_val = t(np.ma.count(self.W, axis=0)-2).ppf(0.5+interval/2)
         
         model = self.pred(X0)
         
@@ -275,8 +277,10 @@ class multiple():
         
         self._fit = False
         
-    def fit(self, X, add_intercept=True):
+    def fit(self, X):
         """
+        Remember you need a vector of 1s in your predictor if you want a constant in the linear model!
+        
         X : np.ndarray
         dimensions: (samples, features)
         
@@ -294,9 +298,6 @@ class multiple():
         err_B: np.ndarray
         Standard errors in OLSE parameters.
         """
-        
-        if add_intercept:
-            X = np.concatenate( [np.ones(self.n)[:,None], X], axis=1 )
         
         self.X = X
         k = X.shape[1]
@@ -354,7 +355,7 @@ class multiple():
         """
         Returns confidence interval in mean predicted values of the OLSE about input features, X0.
         
-        If no X0 supplied, the training data will be used.
+        If no X0 supplied, the training data will be used. THIS IS IMPORTANT TO REMEMBER IF YOU HAVE PRE-WHITENED/ WEIGHTED YOUR INPUT DATA.
         
         X0: np.ndarray
         Features array, with samples in the first dimension.
@@ -369,7 +370,7 @@ class multiple():
         if not self._fit:
             raise TypeError('Linear model not yet specified with self.fit()')
             
-        var_model = np.einsum('i,j->ij',np.diag( self.X @ np.linalg.inv(self.X.T @ self.X) @ self.X.T ), self.s2)
+        var_model = np.einsum('i,j->ij',np.diag( X0 @ np.linalg.inv(self.X.T @ self.X) @ X0.T ), self.s2)
         
         model = self.pred(X0)
         
@@ -380,6 +381,8 @@ class multiple():
     def PI(self, X0=None, interval = 0.9):
         """
         Returns prediction interval in predicted values of the OLSE about input features, X0.
+        
+        THIS FORM IS ONLY CORRECT FOR WHITE DATA. YOU MUST CONSTRUCT PREDICTION INTERVALS YOURSELF IF APPLYING PRE-WHITENING OPERATORS TO THE INPUTS (eg. by computing the variance in the mean response and adding the estimated variance in each sample. For a WLS estimator, this would be done by replacing the "1" in var_model with 1/diag weight matrix.)
         
         If no X0 supplied, the training data will be used.
         
@@ -396,7 +399,7 @@ class multiple():
         if not self._fit:
             raise TypeError('Linear model not yet specified with self.fit()')
             
-        var_model = np.einsum('i,j->ij',1 + np.diag( self.X @ np.linalg.inv(self.X.T @ self.X) @ self.X.T ), self.s2)
+        var_model = np.einsum('i,j->ij',1 + np.diag( X0 @ np.linalg.inv(self.X.T @ self.X) @ X0.T ), self.s2)
         
         model = self.pred(X0)
         

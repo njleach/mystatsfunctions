@@ -14,7 +14,7 @@ Hosking, J. R. M. (2005). Research Report: Fortran Routines for use with the Met
 
 Far faster & more convenient than scipy.fit if fitting distributions many times or over multiple dimensions.
 
-Limitations: since the first dimension is used as the sample dimension, you cannot fit differently-sized samples simultaneously. However, for bootstrapping and geospatial applications this isn't a common issue.
+LIMITATIONS: since the first dimension is used as the sample dimension, you cannot fit differently-sized samples simultaneously. However, for bootstrapping and geospatial applications this isn't a common issue.
 """
 
 import numpy as np
