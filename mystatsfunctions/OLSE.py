@@ -306,7 +306,7 @@ class multiple():
         n = self.n
         
         # OLSE estimator of model parameters:
-        B = np.linalg.inv( X.T @ X ) @ X.T @ Y
+        B = np.linalg.pinv( X.T @ X ) @ X.T @ Y
         
         # compute residuals
         e = Y - X@B
@@ -316,7 +316,7 @@ class multiple():
         
         # parameter error estimate
         # by default this is arranged with dimensions (targets, features)
-        s2_B = np.einsum( 'i,j->ij', s2, np.diag( np.linalg.inv(X.T @ X) ) )
+        s2_B = np.einsum( 'i,j->ij', s2, np.diag( np.linalg.pinv(X.T @ X) ) )
         
         # set class residuals
         self.res = e
@@ -370,7 +370,7 @@ class multiple():
         if not self._fit:
             raise TypeError('Linear model not yet specified with self.fit()')
             
-        var_model = np.einsum('i,j->ij',np.diag( X0 @ np.linalg.inv(self.X.T @ self.X) @ X0.T ), self.s2)
+        var_model = np.einsum('i,j->ij',np.diag( X0 @ np.linalg.pinv(self.X.T @ self.X) @ X0.T ), self.s2)
         
         model = self.pred(X0)
         
@@ -399,7 +399,7 @@ class multiple():
         if not self._fit:
             raise TypeError('Linear model not yet specified with self.fit()')
             
-        var_model = np.einsum('i,j->ij',1 + np.diag( X0 @ np.linalg.inv(self.X.T @ self.X) @ X0.T ), self.s2)
+        var_model = np.einsum('i,j->ij',1 + np.diag( X0 @ np.linalg.pinv(self.X.T @ self.X) @ X0.T ), self.s2)
         
         model = self.pred(X0)
         
