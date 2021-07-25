@@ -277,12 +277,15 @@ class multiple():
         
         self._fit = False
         
-    def fit(self, X):
+    def fit(self, X, expect_singular=False):
         """
         Remember you need a vector of 1s in your predictor if you want a constant in the linear model!
         
         X : np.ndarray
         dimensions: (samples, features)
+        
+        expect_singular: Bool
+        Choose whether you expect the predictor matrix to be singular. If True, use np.pinv rather than np.inv
         
         Creates class objects:
         
@@ -306,7 +309,10 @@ class multiple():
         n = self.n
         
         # OLSE estimator of model parameters:
-        B = np.linalg.pinv( X.T @ X ) @ X.T @ Y
+        if expect_singular:
+            B = np.linalg.pinv( X.T @ X ) @ X.T @ Y
+        else:
+            B = np.linalg.inv( X.T @ X ) @ X.T @ Y
         
         # compute residuals
         e = Y - X@B
