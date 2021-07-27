@@ -114,7 +114,7 @@ class _dist:
         if self.data is None:
             raise Exception('Model not fit to data. Use self.fit(data) to fit parameters to data.')
             
-        return np.sum(self.pdf(self.data),axis=0)
+        return np.prod(self.pdf(self.data),axis=0)
     
     def AIC(self):
         
