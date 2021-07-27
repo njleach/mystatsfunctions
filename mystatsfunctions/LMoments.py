@@ -146,7 +146,7 @@ class _dist:
         
         nll = self.nll()
         
-        return self._no_of_params * self.data.shape[0] - 2 * nll
+        return self._no_of_params * self.data.shape[0] + 2 * nll
     
     def ADts(self):
         
