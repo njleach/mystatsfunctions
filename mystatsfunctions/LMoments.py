@@ -103,10 +103,10 @@ class _dist:
         return self.qf(u)
         
     
-    def likelihood(self):
+    def nll(self):
         
         """
-        Computes the model likelihood based on the fit data and parameters.
+        Computes the model negative log likelihood based on the fit data and parameters.
 
         x : np.ndarray
         """
@@ -114,7 +114,7 @@ class _dist:
         if self.data is None:
             raise Exception('Model not fit to data. Use self.fit(data) to fit parameters to data.')
             
-        return np.prod(self.pdf(self.data),axis=0)
+        return -1 * np.sum( np.log( self.pdf(self.data) ),axis=0 )
     
     def AIC(self):
         
@@ -122,9 +122,9 @@ class _dist:
         Returns Akaike information criterion of fit parameters given model data. Smaller = better.
         """
         
-        likelihood = self.likelihood()
+        nll = self.nll()
         
-        return 2 * ( self._no_of_params - np.log(likelihood) )
+        return 2 * ( self._no_of_params + nll )
     
     def AICc(self):
         
@@ -144,9 +144,9 @@ class _dist:
         Returns Bayesian information criterion of fit parameters given model data. Smaller = better.
         """
         
-        likelihood = self.likelihood()
+        nll = self.nll()
         
-        return self._no_of_params * self.data.shape[0] - 2 * np.log(likelihood)
+        return self._no_of_params * self.data.shape[0] - 2 * nll
     
     def ADts(self):
         
