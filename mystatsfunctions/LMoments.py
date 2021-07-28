@@ -422,7 +422,7 @@ class gpd(_dist):
         pdf = np.where(self.k*(x-self.X)/self.a<1 , pdf , 0)
         
         ## set values smaller than the location parameter equal to zero
-        pdf = np.where(x>self.X , pdf , 0)
+        pdf = np.where(x>=self.X , pdf , 0)
         
         return pdf
 
@@ -441,7 +441,7 @@ class gpd(_dist):
         cdf = np.where(self.k*(x-self.X)/self.a<1 , cdf , 1)
         
         ## set values smaller than the location parameter equal to zero
-        cdf = np.where(x>self.X , cdf , 0)
+        cdf = np.where(x>=self.X , cdf , 0)
         
         return cdf
     
@@ -526,7 +526,7 @@ class weib(_dist):
         pdf = self.k/self.a*( (x-self.X)/self.a )**(self.k-1) * np.exp( -((x-self.X)/self.a)**self.k )
         
         ## set values smaller than the location parameter equal to zero
-        pdf = np.where(x>self.X , pdf , 0)
+        pdf = np.where(x>=self.X , pdf , 0)
         
         return pdf
 
@@ -542,7 +542,7 @@ class weib(_dist):
         cdf = 1 - np.exp( -((x-self.X)/self.a)**self.k )
         
         ## set values smaller than the location parameter equal to zero
-        cdf = np.where(x>self.X , cdf , 0)
+        cdf = np.where(x>=self.X , cdf , 0)
         
         return cdf
     
