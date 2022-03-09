@@ -286,6 +286,92 @@ class gev(_dist):
         self.a=a
         
         self.data = x[:]
+
+# specific Gumbel class
+class gum(_dist):
+    ## attributes
+    
+    def __init__(self, X=None, a=None):
+        self.X = X
+        self.a = a
+        
+        self.data = None
+        
+        self._no_of_params=2
+        
+    def _check_params(self):
+        
+        """
+        Checks the model parameters are fully specified.
+        
+        Raises an exception if not all parameters are set.
+        """
+        
+        if any([x is None for x in [self.X,self.a]]):
+            raise TypeError('parameters not (fully) set.')
+
+    def pdf(self, x):
+        
+        """
+        Returns the pdf of a Gumbel based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        pdf = (1/self.a) * np.exp(-((x-self.X)/self.a+np.exp(-(x-self.X)/self.a)))
+        
+        return pdf
+
+    def cdf(self, x):
+        
+        """
+        Returns the cdf of a Gumbel based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+        
+        cdf = np.exp(-np.exp(-(x-self.X)/self.a))
+        
+        return cdf
+    
+    def qf(self, F):
+        
+        """
+        Returns the quantile function of a Gumbel based on the set parameters. 
+        Raises exception if parameters not set or fit to data.
+        """
+        
+        self._check_params()
+            
+        if np.any(np.abs(F)>1):
+            raise ValueError('Input probabilities must be 0<F<=1.')
+            
+        qf = self.X-self.a*np.log(-np.log(F))
+        
+        return qf
+        
+    def fit(self, x):
+        
+        """
+        Fits the (2) parameters of a Gumbel distribution over the first dimension of x
+
+        x : np.ndarray
+        """
+
+        x_sort = np.sort(x,axis=0)
+
+        l = get_lmoments(x_sort)
+
+        a = l[1]/np.log(2)
+
+        X = l[0] - np.euler_gamma * a
+        
+        self.X=X
+        self.a=a
+        
+        self.data = x[:]
     
 # specific Generalised Logistic class    
 class glo(_dist):
