@@ -19,6 +19,7 @@ LIMITATIONS: since the first dimension is used as the sample dimension, you cann
 
 import numpy as np
 import scipy as sp
+import math
 
 # Method of L-moments for fitting a number of set statistical distributions
 
@@ -26,12 +27,31 @@ import scipy as sp
 def b_r(r,a):
     
     """
-    Helper function for get_lmoments.
-    """
+    Calculates the rth U-statistic for estimating L-moments.
     
-    n = a.shape[0]
+    Args:
+        r: L-moment order.
+        a: *sorted* sample.
+    
+    Returns:
+        rth normalized U-statistic
+    """
 
-    return np.sum([np.prod(i+1-np.arange(1,r+1))/np.prod(n-np.arange(1,r+1))*a[i] for i in np.arange(n)],axis=0)/n
+    # get the sample size
+    n = np.shape(a)[0]
+    
+    # calculate the denominator
+    _denom = np.prod(n-np.arange(1,r+1))*n
+    
+    # generate array for summation & compute sum
+    _to_sum = np.zeros(n)
+    _to_sum[r:] = np.multiply.reduce([np.arange(i,n-r+i) for i in np.arange(1,r+1)])
+        
+    # sum (put sample index into final dimension for correct broadcasting)
+    summed = np.array(np.sum(_to_sum*a.T,axis=-1)/_denom)
+        
+    return np.transpose(summed)
+
 
 def get_lmoments(a,r=3):
     
@@ -571,6 +591,32 @@ class gpd(_dist):
         
         self.data = x[:]
         
+    def fit_X0(self, x):
+        
+        """
+        Fits the (2) parameters of a GP distribution over the first dimension of x
+        
+        Assumes X = 0
+
+        x : np.ndarray
+        """
+
+        x_sort = np.sort(x,axis=0)
+
+        l = get_lmoments(x_sort)
+
+        k = l[0]/l[1]-2
+    
+        a = l[0]*(1+k)
+
+        X = 0
+
+        self.k=k
+        self.X=X
+        self.a=a
+        
+        self.data = x[:]
+        
 # specific Weibull distribution class
 class weib(_dist):
     
@@ -671,6 +717,28 @@ class weib(_dist):
 
         self.k=k
         self.X=X
+        self.a=a
+        
+        self.data = x[:]
+        
+    def fit_X0(self, x):
+        
+        """
+        Fits the (3) parameters of a Weibull distribution over the first dimension of x
+
+        x : np.ndarray
+        """
+
+        x_sort = np.sort(x,axis=0)
+
+        l = get_lmoments(x_sort)
+
+        k = -np.log(2) / np.log(1 - l[1]/l[0])
+    
+        a = l[0] / sp.special.gamma(1+1/k)
+
+        self.k=k
+        self.X=0
         self.a=a
         
         self.data = x[:]
