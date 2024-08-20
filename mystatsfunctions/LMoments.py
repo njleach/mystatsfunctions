@@ -368,7 +368,7 @@ class gum(_dist):
         if np.any(np.abs(F)>1):
             raise ValueError('Input probabilities must be 0<F<=1.')
             
-        qf = self.X+self.a*np.log(-np.log(F))
+        qf = self.X-self.a*np.log(-np.log(F))
         
         return qf
         
